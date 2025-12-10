@@ -625,7 +625,7 @@ QVector<QString> AutoSplatoon::planFullRoute(const QVector<QVector<bool>>& mask)
                     if (cid >= 0 && !done[cid]) {
                         route += planTravelToRoutePaint(curRow, curCol, r, c, mask, visitedGlobal);
                         if (mask[r][c] && !visitedGlobal[r][c]) { route.append("A"); visitedGlobal[r][c] = true; }
-                        route += planComponentBFS(QPoint(c, r), comps[cid], mask, curRow, curCol, visitedGlobal);
+                        route += planComponentGreedy(QPoint(c, r), comps[cid], mask, curRow, curCol, visitedGlobal);
                         done[cid] = true;
                     }
                 }
@@ -637,7 +637,7 @@ QVector<QString> AutoSplatoon::planFullRoute(const QVector<QVector<bool>>& mask)
                     if (cid >= 0 && !done[cid]) {
                         route += planTravelToRoutePaint(curRow, curCol, r, c, mask, visitedGlobal);
                         if (mask[r][c] && !visitedGlobal[r][c]) { route.append("A"); visitedGlobal[r][c] = true; }
-                        route += planComponentBFS(QPoint(c, r), comps[cid], mask, curRow, curCol, visitedGlobal);
+                        route += planComponentGreedy(QPoint(c, r), comps[cid], mask, curRow, curCol, visitedGlobal);
                         done[cid] = true;
                     }
                 }
@@ -699,17 +699,20 @@ void AutoSplatoon::dumpRoute(const QVector<QString>& route)
     f.close();
     qDebug() << "route dumped to" << path << "len=" << route.size();
 }
-QVector<QString> AutoSplatoon::planComponentBFS(QPoint start, const Component& comp, const QVector<QVector<bool>>& mask, int& curRow, int& curCol, QVector<QVector<bool>>& visitedGlobal)
+QVector<QString> AutoSplatoon::planComponentGreedy(QPoint start, const Component& comp, const QVector<QVector<bool>>& mask, int& curRow, int& curCol, QVector<QVector<bool>>& visitedGlobal)
 {
     int H = mask.size();
     int W = H ? mask[0].size() : 0;
     QVector<QVector<bool>> discovered(H, QVector<bool>(W, false));
-    QQueue<QPoint> q;
-    q.enqueue(start);
+    QList<QPoint> frontier;
+    frontier.append(start);
     discovered[start.y()][start.x()] = true;
     QVector<QString> cmds;
     auto inComp = [&](int rr, int cc){ return rr >= comp.minRow && rr <= comp.maxRow && cc >= comp.minCol && cc <= comp.maxCol; };
     auto planPath = [&](int tr, int tc){
+        if (qAbs(tr - curRow) + qAbs(tc - curCol) == 1) {
+            QVector<QPoint> p; p.append(QPoint(tc, tr)); return p;
+        }
         QVector<QVector<QPoint>> prev(H, QVector<QPoint>(W, QPoint(-1,-1)));
         QQueue<QPoint> qq;
         qq.enqueue(QPoint(curCol, curRow));
@@ -742,8 +745,16 @@ QVector<QString> AutoSplatoon::planComponentBFS(QPoint start, const Component& c
         std::reverse(path.begin(), path.end());
         return path;
     };
-    while (!q.isEmpty()) {
-        QPoint target = q.dequeue();
+    while (!frontier.isEmpty()) {
+        int bestIdx = -1;
+        int minD = INT_MAX;
+        for (int i = 0; i < frontier.size(); i++) {
+            int d = qAbs(frontier[i].y() - curRow) + qAbs(frontier[i].x() - curCol);
+            if (d < minD) { minD = d; bestIdx = i; }
+            if (d == 1) break;
+        }
+        QPoint target = frontier[bestIdx];
+        frontier.removeAt(bestIdx);
         QVector<QPoint> path = planPath(target.y(), target.x());
         for (const QPoint& step : path) {
             int nr = step.y();
@@ -764,7 +775,7 @@ QVector<QString> AutoSplatoon::planComponentBFS(QPoint start, const Component& c
             if (!mask[nr][nc]) continue;
             if (discovered[nr][nc]) continue;
             discovered[nr][nc] = true;
-            q.enqueue(QPoint(nc, nr));
+            frontier.append(QPoint(nc, nr));
         }
     }
     return cmds;
