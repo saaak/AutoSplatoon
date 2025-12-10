@@ -12,6 +12,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
       - uses: ilammy/msvc-dev-cmd@v1
       - uses: jurplel/install-qt-action@v3
         with:
@@ -19,25 +24,29 @@ jobs:
           arch: win64_msvc2019_64
       - name: qmake
         shell: cmd
+        working-directory: AutoSplatoon
         run: |
-          cd AutoSplatoon
-          qmake AutoSplatoon.pro
+          "%Qt5_DIR%\bin\qmake.exe" AutoSplatoon.pro
       - name: build
         shell: cmd
+        working-directory: AutoSplatoon
         run: |
           nmake
       - name: deploy
         shell: cmd
+        working-directory: AutoSplatoon
         run: |
-          for /f "delims=" %%F in ('dir /s /b *.exe') do set EXE=%%F
+          if exist release\AutoSplatoon.exe (
+            set EXE=release\AutoSplatoon.exe
+          ) else (
+            for /f "delims=" %%F in ('dir /s /b *.exe ^| findstr /i AutoSplatoon.exe') do set EXE=%%F
+          )
           if not defined EXE exit /b 1
           mkdir dist
-          windeployqt --compiler-runtime "%EXE%"
-          move "%EXE%" dist\
-          for /f "delims=" %%D in ('dir /b *.dll') do move "%%D" dist\
+          copy "%EXE%" dist\
+          "%Qt5_DIR%\bin\windeployqt.exe" --release --compiler-runtime "dist\AutoSplatoon.exe"
       - name: upload
         uses: actions/upload-artifact@v4
         with:
           name: AutoSplatoon-windows
           path: dist
-
