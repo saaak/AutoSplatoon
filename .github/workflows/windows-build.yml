@@ -1,0 +1,43 @@
+name: windows-build
+
+on:
+  push:
+    branches: [ feature/nearest-neighbor-mask ]
+  pull_request:
+    branches: [ feature/nearest-neighbor-mask ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: jurplel/install-qt-action@v3
+        with:
+          version: 5.15.2
+          arch: win64_msvc2019_64
+      - name: qmake
+        shell: cmd
+        run: |
+          cd AutoSplatoon
+          qmake AutoSplatoon.pro
+      - name: build
+        shell: cmd
+        run: |
+          nmake
+      - name: deploy
+        shell: cmd
+        run: |
+          for /f "delims=" %%F in ('dir /s /b *.exe') do set EXE=%%F
+          if not defined EXE exit /b 1
+          mkdir dist
+          windeployqt --compiler-runtime "%EXE%"
+          move "%EXE%" dist\
+          for /f "delims=" %%D in ('dir /b *.dll') do move "%%D" dist\
+      - name: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoSplatoon-windows
+          path: dist
+
