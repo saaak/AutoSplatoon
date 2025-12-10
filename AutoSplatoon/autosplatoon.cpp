@@ -524,6 +524,7 @@ void AutoSplatoon::executeTaskNearestNeighbor()
     if (!mask.isEmpty()) localMask = mask;
     else localMask = buildMask(image, ui->thresholdBox->value());
     QVector<QString> route = planFullRoute(localMask);
+    dumpRoute(route);
     executeRoute(route, interval);
 }
 
@@ -633,4 +634,40 @@ void AutoSplatoon::executeRoute(const QVector<QString>& route, int intervalMs)
         ui->columnBox->setValue(column);
     }
     if (completed) on_haltButton_clicked();
+}
+
+void AutoSplatoon::dumpRoute(const QVector<QString>& route)
+{
+    QString path = QApplication::applicationDirPath() + "/planned_route.txt";
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        qDebug() << "failed to open planned_route.txt" << path;
+        return;
+    }
+    QTextStream ts(&f);
+    int r = row;
+    int c = column;
+    ts << "start " << r << "," << c << "\n";
+    for (const QString& s : route) {
+        if (s == "A") {
+            ts << "A @ " << r << "," << c << "\n";
+        } else if (s == "Dr") {
+            c += 1;
+            ts << "Dr -> " << r << "," << c << "\n";
+        } else if (s == "Dl") {
+            c -= 1;
+            ts << "Dl -> " << r << "," << c << "\n";
+        } else if (s == "Dd") {
+            r += 1;
+            ts << "Dd -> " << r << "," << c << "\n";
+        } else if (s == "Du") {
+            r -= 1;
+            ts << "Du -> " << r << "," << c << "\n";
+        } else {
+            ts << s << "\n";
+        }
+    }
+    ts << "end " << r << "," << c << "\n";
+    f.close();
+    qDebug() << "route dumped to" << path << "len=" << route.size();
 }

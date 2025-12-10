@@ -99,6 +99,7 @@ private:
     QVector<QString> planComponentDFS(const Component& comp, const QVector<QVector<bool>>& mask, int& curRow, int& curCol);
     QVector<QString> planFullRoute(const QVector<QVector<bool>>& mask);
     void executeRoute(const QVector<QString>& route, int intervalMs);
+    void dumpRoute(const QVector<QString>& route);
     void renderMaskPreview();
 };
 #endif // MAINWINDOW_H
