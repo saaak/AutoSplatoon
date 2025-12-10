@@ -603,29 +603,44 @@ QVector<QString> AutoSplatoon::planComponentDFS(const Component& comp, const QVe
 
 QVector<QString> AutoSplatoon::planFullRoute(const QVector<QVector<bool>>& mask)
 {
+    int H = mask.size();
+    int W = H ? mask[0].size() : 0;
     QVector<Component> comps = findComponents(mask);
+    QVector<int> compId(H * W, -1);
+    for (int i = 0; i < comps.size(); i++) {
+        for (const QPoint& p : comps[i].points) {
+            compId[p.y() * W + p.x()] = i;
+        }
+    }
     QVector<bool> done(comps.size(), false);
     QVector<QString> route;
     int curRow = row;
     int curCol = column;
-    QVector<QVector<bool>> visitedGlobal(mask.size(), QVector<bool>(mask.isEmpty() ? 0 : mask[0].size(), false));
-    for (;;) {
-        int idx = -1;
-        int bestDist = INT_MAX;
-        for (int i = 0; i < comps.size(); i++) {
-            if (done[i]) continue;
-            const Component& comp = comps[i];
-            int dist = INT_MAX;
-            for (const QPoint& p : comp.points) {
-                int d = qAbs(p.y() - curRow) + qAbs(p.x() - curCol);
-                if (d < dist) dist = d;
+    QVector<QVector<bool>> visitedGlobal(H, QVector<bool>(W, false));
+    for (int r = 0; r < H; r++) {
+        if (r % 2 == 0) {
+            for (int c = 0; c < W; c++) {
+                if (mask[r][c] && !visitedGlobal[r][c]) {
+                    int cid = compId[r * W + c];
+                    if (cid >= 0 && !done[cid]) {
+                        route += planTravelToRoutePaint(curRow, curCol, r, c, mask, visitedGlobal);
+                        route += planComponentBFS(comps[cid], mask, curRow, curCol, visitedGlobal);
+                        done[cid] = true;
+                    }
+                }
             }
-            if (dist < bestDist) { bestDist = dist; idx = i; }
+        } else {
+            for (int c = W - 1; c >= 0; c--) {
+                if (mask[r][c] && !visitedGlobal[r][c]) {
+                    int cid = compId[r * W + c];
+                    if (cid >= 0 && !done[cid]) {
+                        route += planTravelToRoutePaint(curRow, curCol, r, c, mask, visitedGlobal);
+                        route += planComponentBFS(comps[cid], mask, curRow, curCol, visitedGlobal);
+                        done[cid] = true;
+                    }
+                }
+            }
         }
-        if (idx == -1) break;
-        QVector<QString> compCmds = planComponentDFS(comps[idx], mask, curRow, curCol, visitedGlobal);
-        route += compCmds;
-        done[idx] = true;
     }
     return route;
 }
@@ -681,4 +696,74 @@ void AutoSplatoon::dumpRoute(const QVector<QString>& route)
     ts << "end " << r << "," << c << "\n";
     f.close();
     qDebug() << "route dumped to" << path << "len=" << route.size();
+}
+QVector<QString> AutoSplatoon::planComponentBFS(const Component& comp, const QVector<QVector<bool>>& mask, int& curRow, int& curCol, QVector<QVector<bool>>& visitedGlobal)
+{
+    int H = mask.size();
+    int W = H ? mask[0].size() : 0;
+    QVector<QVector<bool>> discovered(H, QVector<bool>(W, false));
+    QQueue<QPoint> q;
+    q.enqueue(QPoint(comp.entry.x(), comp.entry.y()));
+    discovered[comp.entry.y()][comp.entry.x()] = true;
+    QVector<QString> cmds;
+    auto inComp = [&](int rr, int cc){ return rr >= comp.minRow && rr <= comp.maxRow && cc >= comp.minCol && cc <= comp.maxCol; };
+    auto planPath = [&](int tr, int tc){
+        QVector<QVector<QPoint>> prev(H, QVector<QPoint>(W, QPoint(-1,-1)));
+        QQueue<QPoint> qq;
+        qq.enqueue(QPoint(curCol, curRow));
+        prev[curRow][curCol] = QPoint(curCol, curRow);
+        while (!qq.isEmpty()) {
+            QPoint p = qq.dequeue();
+            int r = p.y();
+            int c = p.x();
+            if (r == tr && c == tc) break;
+            const int dr[4] = {0,0,-1,1};
+            const int dc[4] = {1,-1,0,0};
+            for (int k = 0; k < 4; k++) {
+                int nr = r + dr[k];
+                int nc = c + dc[k];
+                if (!inComp(nr, nc)) continue;
+                if (!mask[nr][nc]) continue;
+                if (prev[nr][nc].x() != -1) continue;
+                prev[nr][nc] = QPoint(c, r);
+                qq.enqueue(QPoint(nc, nr));
+            }
+        }
+        QVector<QPoint> path;
+        QPoint cur(tc, tr);
+        if (prev[tr][tc].x() == -1) return path;
+        while (!(cur.y() == curRow && cur.x() == curCol)) {
+            path.push_back(cur);
+            QPoint pv = prev[cur.y()][cur.x()];
+            cur = pv;
+        }
+        std::reverse(path.begin(), path.end());
+        return path;
+    };
+    while (!q.isEmpty()) {
+        QPoint target = q.dequeue();
+        QVector<QPoint> path = planPath(target.y(), target.x());
+        for (const QPoint& step : path) {
+            int nr = step.y();
+            int nc = step.x();
+            if (nc == curCol + 1 && nr == curRow) { cmds.append("Dr"); curCol += 1; }
+            else if (nc == curCol - 1 && nr == curRow) { cmds.append("Dl"); curCol -= 1; }
+            else if (nr == curRow + 1 && nc == curCol) { cmds.append("Dd"); curRow += 1; }
+            else if (nr == curRow - 1 && nc == curCol) { cmds.append("Du"); curRow -= 1; }
+            if (mask[curRow][curCol] && !visitedGlobal[curRow][curCol]) { cmds.append("A"); visitedGlobal[curRow][curCol] = true; }
+        }
+        if (mask[target.y()][target.x()] && !visitedGlobal[target.y()][target.x()]) { cmds.append("A"); visitedGlobal[target.y()][target.x()] = true; }
+        const int dr[4] = {0,0,-1,1};
+        const int dc[4] = {1,-1,0,0};
+        for (int k = 0; k < 4; k++) {
+            int nr = target.y() + dr[k];
+            int nc = target.x() + dc[k];
+            if (!inComp(nr, nc)) continue;
+            if (!mask[nr][nc]) continue;
+            if (discovered[nr][nc]) continue;
+            discovered[nr][nc] = true;
+            q.enqueue(QPoint(nc, nr));
+        }
+    }
+    return cmds;
 }
