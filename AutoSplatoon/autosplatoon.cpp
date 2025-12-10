@@ -523,8 +523,80 @@ void AutoSplatoon::executeTaskNearestNeighbor()
     QVector<QVector<bool>> localMask;
     if (!mask.isEmpty()) localMask = mask;
     else localMask = buildMask(image, ui->thresholdBox->value());
-    QVector<Component> comps = findComponents(localMask);
+    QVector<QString> route = planFullRoute(localMask);
+    executeRoute(route, interval);
+}
+
+void AutoSplatoon::drawComponentDFS(const Component& comp, const QVector<QVector<bool>>& mask, int intervalMs)
+{
+    drawComponent(comp, mask, intervalMs);
+}
+
+QVector<QString> AutoSplatoon::planTravelToRoute(int& curRow, int& curCol, int targetRow, int targetCol)
+{
+    QVector<QString> cmds;
+    while (curRow < targetRow) { cmds.append("Dd"); curRow += 1; }
+    while (curRow > targetRow) { cmds.append("Du"); curRow -= 1; }
+    while (curCol < targetCol) { cmds.append("Dr"); curCol += 1; }
+    while (curCol > targetCol) { cmds.append("Dl"); curCol -= 1; }
+    return cmds;
+}
+
+QVector<QString> AutoSplatoon::planComponentDFS(const Component& comp, const QVector<QVector<bool>>& mask, int& curRow, int& curCol)
+{
+    QVector<QString> cmds;
+    QVector<QString> enter = planTravelToRoute(curRow, curCol, comp.entry.y(), comp.entry.x());
+    cmds += enter;
+    if (mask[comp.entry.y()][comp.entry.x()]) cmds.append("A");
+    QVector<QVector<bool>> visited(mask.size(), QVector<bool>(mask.isEmpty() ? 0 : mask[0].size(), false));
+    visited[comp.entry.y()][comp.entry.x()] = true;
+    QVector<QPoint> stack;
+    QPoint cur(comp.entry.x(), comp.entry.y());
+    auto inComp = [&](int rr, int cc){ return rr >= comp.minRow && rr <= comp.maxRow && cc >= comp.minCol && cc <= comp.maxCol; };
+    for (;;) {
+        const int dr[4] = {0, 0, -1, 1};
+        const int dc[4] = {1, -1, 0, 0};
+        bool moved = false;
+        for (int k = 0; k < 4; k++) {
+            int nr = cur.y() + dr[k];
+            int nc = cur.x() + dc[k];
+            if (!inComp(nr, nc)) continue;
+            if (!mask[nr][nc]) continue;
+            if (visited[nr][nc]) continue;
+            stack.push_back(cur);
+            if (dc[k] == 1) { cmds.append("Dr"); curCol += 1; }
+            else if (dc[k] == -1) { cmds.append("Dl"); curCol -= 1; }
+            else if (dr[k] == 1) { cmds.append("Dd"); curRow += 1; }
+            else if (dr[k] == -1) { cmds.append("Du"); curRow -= 1; }
+            cur = QPoint(nc, nr);
+            visited[nr][nc] = true;
+            cmds.append("A");
+            moved = true;
+            break;
+        }
+        if (!moved) {
+            if (stack.isEmpty()) break;
+            QPoint back = stack.back();
+            stack.pop_back();
+            int rr = back.y() - cur.y();
+            int cc = back.x() - cur.x();
+            if (cc == 1) { cmds.append("Dr"); curCol += 1; }
+            else if (cc == -1) { cmds.append("Dl"); curCol -= 1; }
+            else if (rr == 1) { cmds.append("Dd"); curRow += 1; }
+            else if (rr == -1) { cmds.append("Du"); curRow -= 1; }
+            cur = back;
+        }
+    }
+    return cmds;
+}
+
+QVector<QString> AutoSplatoon::planFullRoute(const QVector<QVector<bool>>& mask)
+{
+    QVector<Component> comps = findComponents(mask);
     QVector<bool> done(comps.size(), false);
+    QVector<QString> route;
+    int curRow = row;
+    int curCol = column;
     for (;;) {
         int idx = -1;
         int bestDist = INT_MAX;
@@ -533,23 +605,31 @@ void AutoSplatoon::executeTaskNearestNeighbor()
             const Component& comp = comps[i];
             int dist = INT_MAX;
             for (const QPoint& p : comp.points) {
-                int d = qAbs(p.y() - row) + qAbs(p.x() - column);
+                int d = qAbs(p.y() - curRow) + qAbs(p.x() - curCol);
                 if (d < dist) dist = d;
             }
-            if (dist < bestDist) {
-                bestDist = dist;
-                idx = i;
-            }
+            if (dist < bestDist) { bestDist = dist; idx = i; }
         }
         if (idx == -1) break;
-        drawComponentDFS(comps[idx], localMask, interval);
+        QVector<QString> compCmds = planComponentDFS(comps[idx], mask, curRow, curCol);
+        route += compCmds;
         done[idx] = true;
-        if (haltFlag) break;
     }
-    on_haltButton_clicked();
+    return route;
 }
 
-void AutoSplatoon::drawComponentDFS(const Component& comp, const QVector<QVector<bool>>& mask, int intervalMs)
+void AutoSplatoon::executeRoute(const QVector<QString>& route, int intervalMs)
 {
-    drawComponent(comp, mask, intervalMs);
+    for (const QString& s : route) {
+        if (haltFlag) break;
+        while (pauseFlag) QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        manControl2->sendCommand(s, intervalMs);
+        if (s == "Dr") { column += 1; }
+        else if (s == "Dl") { column -= 1; }
+        else if (s == "Dd") { row += 1; }
+        else if (s == "Du") { row -= 1; }
+        ui->rowBox->setValue(row);
+        ui->columnBox->setValue(column);
+    }
+    on_haltButton_clicked();
 }

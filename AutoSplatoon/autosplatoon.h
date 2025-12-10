@@ -95,6 +95,10 @@ private:
     void travelTo(int targetRow, int targetCol, int intervalMs);
     void drawComponent(const Component& comp, const QVector<QVector<bool>>& mask, int intervalMs);
     void drawComponentDFS(const Component& comp, const QVector<QVector<bool>>& mask, int intervalMs);
+    QVector<QString> planTravelToRoute(int& curRow, int& curCol, int targetRow, int targetCol);
+    QVector<QString> planComponentDFS(const Component& comp, const QVector<QVector<bool>>& mask, int& curRow, int& curCol);
+    QVector<QString> planFullRoute(const QVector<QVector<bool>>& mask);
+    void executeRoute(const QVector<QString>& route, int intervalMs);
     void renderMaskPreview();
 };
 #endif // MAINWINDOW_H
