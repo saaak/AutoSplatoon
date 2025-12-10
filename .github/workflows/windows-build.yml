@@ -26,7 +26,7 @@ jobs:
         shell: cmd
         working-directory: AutoSplatoon
         run: |
-          "%Qt5_DIR%\bin\qmake.exe" AutoSplatoon.pro
+          "%Qt5_DIR%\\bin\\qmake.exe" AutoSplatoon.pro CONFIG+=release
       - name: build
         shell: cmd
         working-directory: AutoSplatoon
@@ -36,17 +36,19 @@ jobs:
         shell: cmd
         working-directory: AutoSplatoon
         run: |
-          if exist release\AutoSplatoon.exe (
-            set EXE=release\AutoSplatoon.exe
+          if exist release\\AutoSplatoon.exe (
+            set EXE=release\\AutoSplatoon.exe
+          ) else if exist debug\\AutoSplatoon.exe (
+            set EXE=debug\\AutoSplatoon.exe
           ) else (
             for /f "delims=" %%F in ('dir /s /b *.exe ^| findstr /i AutoSplatoon.exe') do set EXE=%%F
           )
           if not defined EXE exit /b 1
           mkdir dist
-          copy "%EXE%" dist\
-          "%Qt5_DIR%\bin\windeployqt.exe" --release --compiler-runtime "dist\AutoSplatoon.exe"
+          copy "%EXE%" dist\\
+          "%Qt5_DIR%\\bin\\windeployqt.exe" --release --compiler-runtime "dist\\AutoSplatoon.exe"
       - name: upload
         uses: actions/upload-artifact@v4
         with:
           name: AutoSplatoon-windows
-          path: dist
+          path: AutoSplatoon/dist
