@@ -98,7 +98,7 @@ private:
     QVector<QString> planTravelToRoute(int& curRow, int& curCol, int targetRow, int targetCol);
     QVector<QString> planTravelToRoutePaint(int& curRow, int& curCol, int targetRow, int targetCol, const QVector<QVector<bool>>& mask, QVector<QVector<bool>>& visitedGlobal);
     QVector<QString> planComponentDFS(const Component& comp, const QVector<QVector<bool>>& mask, int& curRow, int& curCol, QVector<QVector<bool>>& visitedGlobal);
-    QVector<QString> planComponentBFS(const Component& comp, const QVector<QVector<bool>>& mask, int& curRow, int& curCol, QVector<QVector<bool>>& visitedGlobal);
+    QVector<QString> planComponentBFS(QPoint start, const Component& comp, const QVector<QVector<bool>>& mask, int& curRow, int& curCol, QVector<QVector<bool>>& visitedGlobal);
     QVector<QString> planFullRoute(const QVector<QVector<bool>>& mask);
     void executeRoute(const QVector<QString>& route, int intervalMs);
     void dumpRoute(const QVector<QString>& route);
