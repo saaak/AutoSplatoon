@@ -543,12 +543,22 @@ QVector<QString> AutoSplatoon::planTravelToRoute(int& curRow, int& curCol, int t
     return cmds;
 }
 
-QVector<QString> AutoSplatoon::planComponentDFS(const Component& comp, const QVector<QVector<bool>>& mask, int& curRow, int& curCol)
+QVector<QString> AutoSplatoon::planTravelToRoutePaint(int& curRow, int& curCol, int targetRow, int targetCol, const QVector<QVector<bool>>& mask, QVector<QVector<bool>>& visitedGlobal)
 {
     QVector<QString> cmds;
-    QVector<QString> enter = planTravelToRoute(curRow, curCol, comp.entry.y(), comp.entry.x());
+    while (curRow < targetRow) { cmds.append("Dd"); curRow += 1; if (mask[curRow][curCol] && !visitedGlobal[curRow][curCol]) { cmds.append("A"); visitedGlobal[curRow][curCol] = true; } }
+    while (curRow > targetRow) { cmds.append("Du"); curRow -= 1; if (mask[curRow][curCol] && !visitedGlobal[curRow][curCol]) { cmds.append("A"); visitedGlobal[curRow][curCol] = true; } }
+    while (curCol < targetCol) { cmds.append("Dr"); curCol += 1; if (mask[curRow][curCol] && !visitedGlobal[curRow][curCol]) { cmds.append("A"); visitedGlobal[curRow][curCol] = true; } }
+    while (curCol > targetCol) { cmds.append("Dl"); curCol -= 1; if (mask[curRow][curCol] && !visitedGlobal[curRow][curCol]) { cmds.append("A"); visitedGlobal[curRow][curCol] = true; } }
+    return cmds;
+}
+
+QVector<QString> AutoSplatoon::planComponentDFS(const Component& comp, const QVector<QVector<bool>>& mask, int& curRow, int& curCol, QVector<QVector<bool>>& visitedGlobal)
+{
+    QVector<QString> cmds;
+    QVector<QString> enter = planTravelToRoutePaint(curRow, curCol, comp.entry.y(), comp.entry.x(), mask, visitedGlobal);
     cmds += enter;
-    if (mask[comp.entry.y()][comp.entry.x()]) cmds.append("A");
+    if (mask[comp.entry.y()][comp.entry.x()] && !visitedGlobal[comp.entry.y()][comp.entry.x()]) { cmds.append("A"); visitedGlobal[comp.entry.y()][comp.entry.x()] = true; }
     QVector<QVector<bool>> visited(mask.size(), QVector<bool>(mask.isEmpty() ? 0 : mask[0].size(), false));
     visited[comp.entry.y()][comp.entry.x()] = true;
     QVector<QPoint> stack;
@@ -571,7 +581,7 @@ QVector<QString> AutoSplatoon::planComponentDFS(const Component& comp, const QVe
             else if (dr[k] == -1) { cmds.append("Du"); curRow -= 1; }
             cur = QPoint(nc, nr);
             visited[nr][nc] = true;
-            cmds.append("A");
+            if (!visitedGlobal[nr][nc]) { cmds.append("A"); visitedGlobal[nr][nc] = true; }
             moved = true;
             break;
         }
@@ -598,6 +608,7 @@ QVector<QString> AutoSplatoon::planFullRoute(const QVector<QVector<bool>>& mask)
     QVector<QString> route;
     int curRow = row;
     int curCol = column;
+    QVector<QVector<bool>> visitedGlobal(mask.size(), QVector<bool>(mask.isEmpty() ? 0 : mask[0].size(), false));
     for (;;) {
         int idx = -1;
         int bestDist = INT_MAX;
@@ -612,7 +623,7 @@ QVector<QString> AutoSplatoon::planFullRoute(const QVector<QVector<bool>>& mask)
             if (dist < bestDist) { bestDist = dist; idx = i; }
         }
         if (idx == -1) break;
-        QVector<QString> compCmds = planComponentDFS(comps[idx], mask, curRow, curCol);
+        QVector<QString> compCmds = planComponentDFS(comps[idx], mask, curRow, curCol, visitedGlobal);
         route += compCmds;
         done[idx] = true;
     }
