@@ -620,8 +620,9 @@ QVector<QString> AutoSplatoon::planFullRoute(const QVector<QVector<bool>>& mask)
 
 void AutoSplatoon::executeRoute(const QVector<QString>& route, int intervalMs)
 {
+    bool completed = true;
     for (const QString& s : route) {
-        if (haltFlag) break;
+        if (haltFlag) { completed = false; break; }
         while (pauseFlag) QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
         manControl2->sendCommand(s, intervalMs);
         if (s == "Dr") { column += 1; }
@@ -631,5 +632,5 @@ void AutoSplatoon::executeRoute(const QVector<QString>& route, int intervalMs)
         ui->rowBox->setValue(row);
         ui->columnBox->setValue(column);
     }
-    on_haltButton_clicked();
+    if (completed) on_haltButton_clicked();
 }
