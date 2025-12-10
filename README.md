@@ -40,3 +40,12 @@ ESP32系列，e.g. ESP32 WROOM模组、ESP32 WROVER模组、ESP32 PICO V3芯片�
 3. 在项目根目录执行：
    - `powershell -ExecutionPolicy Bypass -File scripts/build-windows.ps1 -Configuration release`
 4. 构建完成后，可执行文件与依赖位于 `AutoSplatoon/dist`。
+
+---
+**Linux 使用 Docker 远程编译**
+
+1. 在有 Docker 的 Linux 机器上执行：
+   - `git clone https://github.com/saaak/AutoSplatoon.git`
+   - `cd AutoSplatoon`
+   - `bash scripts/docker-build-linux.sh`
+2. 输出位于 `AutoSplatoon/dist`，为 Linux 可执行文件。

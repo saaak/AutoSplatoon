@@ -1,0 +1,6 @@
+FROM ubuntu:22.04
+RUN apt-get update && apt-get install -y build-essential qtbase5-dev qtbase5-dev-tools qtchooser qt5-qmake qtserialport5-dev qttools5-dev-tools && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY AutoSplatoon /workspace/AutoSplatoon
+RUN qmake /workspace/AutoSplatoon/AutoSplatoon.pro CONFIG+=release && make -j$(nproc)
+CMD ["/bin/bash","-lc","mkdir -p /workspace/dist && cp -r /workspace/AutoSplatoon/release/AutoSplatoon /workspace/dist/ && ls -al /workspace/dist"]
