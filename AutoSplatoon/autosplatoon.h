@@ -2,6 +2,8 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QVector>
+#include <QPoint>
 
 #include "commonNames.h"
 #include "inputemulator.h"
@@ -44,9 +46,13 @@ private slots:
 
     void executeTask();
 
+    void executeTaskNearestNeighbor();
+
     void on_manualButton_clicked();
 
     void on_readoutput();
+
+    void on_thresholdBox_valueChanged(int value);
 
 signals:
     void sendButtonAction(quint64 action, bool temporary);
@@ -72,5 +78,22 @@ private:
     bool pauseFlag = false;
     //bool startFlag = false;
     bool haltFlag = true;
+    int threshold = 128;
+    QVector<QVector<bool>> mask;
+
+    struct Component {
+        QVector<QPoint> points;
+        int minRow;
+        int maxRow;
+        int minCol;
+        int maxCol;
+        QPoint entry;
+    };
+
+    QVector<QVector<bool>> buildMask(const QImage& img, int threshold);
+    QVector<Component> findComponents(const QVector<QVector<bool>>& mask);
+    void travelTo(int targetRow, int targetCol, int intervalMs);
+    void drawComponent(const Component& comp, const QVector<QVector<bool>>& mask, int intervalMs);
+    void renderMaskPreview();
 };
 #endif // MAINWINDOW_H

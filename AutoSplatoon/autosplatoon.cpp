@@ -13,6 +13,8 @@
 #include <QThread>
 #include <QProcess>
 #include <QElapsedTimer>
+#include <QQueue>
+#include <climits>
 
 AutoSplatoon::AutoSplatoon(QWidget* parent)
     : QMainWindow(parent)
@@ -32,6 +34,9 @@ AutoSplatoon::AutoSplatoon(QWidget* parent)
     ui->intervalBox->setValue(70);
     ui->rowBox->setValue(0);
     ui->columnBox->setValue(0);
+    threshold = 128;
+    ui->thresholdBox->setValue(threshold);
+    ui->thresholdBox->setEnabled(false);
 
     manControl2 = new ManualControl();
     manControl2->setAttribute(Qt::WA_DeleteOnClose);
@@ -75,10 +80,8 @@ void AutoSplatoon::on_uploadButton_clicked()
         //startFlag = false;
         pauseFlag = false;
         image = QImage(fileName);
-        QGraphicsScene *scene = new QGraphicsScene;
-        scene->addPixmap(QPixmap::fromImage(image));
-        ui->graphicsView->setScene(scene);
-        ui->graphicsView->show();
+        mask = buildMask(image, ui->thresholdBox->value());
+        renderMaskPreview();
         ui->startButton->setEnabled(true);
         ui->label->setEnabled(true);
         ui->label_2->setEnabled(true);
@@ -86,6 +89,8 @@ void AutoSplatoon::on_uploadButton_clicked()
         ui->intervalBox->setEnabled(true);
         ui->rowBox->setEnabled(true);
         ui->columnBox->setEnabled(true);
+        ui->thresholdBox->setEnabled(true);
+        ui->label_threshold->setEnabled(true);
     }
 }
 
@@ -271,7 +276,7 @@ void AutoSplatoon::on_startButton_clicked()
     //startFlag = true;
     haltFlag = false;
 
-    executeTask();
+    executeTaskNearestNeighbor();
 }
 
 void AutoSplatoon::on_pauseButton_clicked()
@@ -297,9 +302,11 @@ void AutoSplatoon::on_haltButton_clicked()
     ui->label->setEnabled(false);
     ui->label_2->setEnabled(false);
     ui->label_4->setEnabled(false);
+    ui->label_threshold->setEnabled(false);
     ui->intervalBox->setEnabled(false);
     ui->rowBox->setEnabled(false);
     ui->columnBox->setEnabled(false);
+    ui->thresholdBox->setEnabled(false);
     ui->pauseButton->setText("暂停");
     //startFlag = false;
     pauseFlag = false;
@@ -323,4 +330,184 @@ void AutoSplatoon::on_manualButton_clicked()
         connect(manControl1, SIGNAL(buttonAction(quint64, bool)), this, SLOT(recieveButtonAction(quint64, bool)));
         connect(manControl1, SIGNAL(manControlDeletedSignal()), this, SLOT(manControlDeletedSignal()));
     }
+}
+void AutoSplatoon::renderMaskPreview()
+{
+    if (image.isNull()) return;
+    QImage preview(image.width(), image.height(), QImage::Format_RGB32);
+    for (int r = 0; r < image.height(); r++) {
+        for (int c = 0; c < image.width(); c++) {
+            bool on = (r < mask.size() && c < mask[r].size()) ? mask[r][c] : false;
+            preview.setPixel(c, r, on ? qRgb(0,0,0) : qRgb(255,255,255));
+        }
+    }
+    QGraphicsScene *scene = new QGraphicsScene;
+    scene->addPixmap(QPixmap::fromImage(preview));
+    ui->graphicsView->setScene(scene);
+    ui->graphicsView->show();
+}
+
+void AutoSplatoon::on_thresholdBox_valueChanged(int value)
+{
+    threshold = value;
+    if (!image.isNull()) {
+        mask = buildMask(image, threshold);
+        renderMaskPreview();
+    }
+}
+
+QVector<QVector<bool>> AutoSplatoon::buildMask(const QImage& img, int threshold)
+{
+    QVector<QVector<bool>> mask(img.height());
+    for (int r = 0; r < img.height(); r++) {
+        mask[r].resize(img.width());
+        for (int c = 0; c < img.width(); c++) {
+            mask[r][c] = qGray(img.pixel(c, r)) < threshold;
+        }
+    }
+    return mask;
+}
+
+QVector<AutoSplatoon::Component> AutoSplatoon::findComponents(const QVector<QVector<bool>>& mask)
+{
+    int H = mask.size();
+    int W = H ? mask[0].size() : 0;
+    QVector<QVector<bool>> vis(H, QVector<bool>(W, false));
+    QVector<Component> comps;
+    QQueue<QPoint> q;
+    for (int r = 0; r < H; r++) {
+        for (int c = 0; c < W; c++) {
+            if (!mask[r][c] || vis[r][c]) continue;
+            Component comp;
+            comp.minRow = r;
+            comp.maxRow = r;
+            comp.minCol = c;
+            comp.maxCol = c;
+            vis[r][c] = true;
+            q.enqueue(QPoint(c, r));
+            while (!q.isEmpty()) {
+                QPoint p = q.dequeue();
+                comp.points.append(p);
+                int rr = p.y();
+                int cc = p.x();
+                if (rr < comp.minRow) comp.minRow = rr;
+                if (rr > comp.maxRow) comp.maxRow = rr;
+                if (cc < comp.minCol) comp.minCol = cc;
+                if (cc > comp.maxCol) comp.maxCol = cc;
+                const int dr[4] = {1,-1,0,0};
+                const int dc[4] = {0,0,1,-1};
+                for (int k = 0; k < 4; k++) {
+                    int nr = rr + dr[k];
+                    int nc = cc + dc[k];
+                    if (nr >= 0 && nr < H && nc >= 0 && nc < W && mask[nr][nc] && !vis[nr][nc]) {
+                        vis[nr][nc] = true;
+                        q.enqueue(QPoint(nc, nr));
+                    }
+                }
+            }
+            comp.entry = QPoint(comp.minCol, comp.minRow);
+            comps.append(comp);
+        }
+    }
+    return comps;
+}
+
+void AutoSplatoon::travelTo(int targetRow, int targetCol, int intervalMs)
+{
+    while (!haltFlag && row < targetRow) {
+        while (pauseFlag) QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        manControl2->sendCommand("Dd", intervalMs);
+        row += 1;
+        ui->rowBox->setValue(row);
+        ui->columnBox->setValue(column);
+    }
+    while (!haltFlag && row > targetRow) {
+        while (pauseFlag) QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        manControl2->sendCommand("Du", intervalMs);
+        row -= 1;
+        ui->rowBox->setValue(row);
+        ui->columnBox->setValue(column);
+    }
+    while (!haltFlag && column < targetCol) {
+        while (pauseFlag) QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        manControl2->sendCommand("Dr", intervalMs);
+        column += 1;
+        ui->rowBox->setValue(row);
+        ui->columnBox->setValue(column);
+    }
+    while (!haltFlag && column > targetCol) {
+        while (pauseFlag) QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        manControl2->sendCommand("Dl", intervalMs);
+        column -= 1;
+        ui->rowBox->setValue(row);
+        ui->columnBox->setValue(column);
+    }
+}
+
+void AutoSplatoon::drawComponent(const Component& comp, const QVector<QVector<bool>>& mask, int intervalMs)
+{
+    travelTo(comp.entry.y(), comp.entry.x(), intervalMs);
+    for (int r = comp.minRow; r <= comp.maxRow && !haltFlag; r++) {
+        if (column < comp.minCol) {
+            travelTo(r, comp.minCol, intervalMs);
+        } else if (column > comp.maxCol) {
+            travelTo(r, comp.maxCol, intervalMs);
+        } else {
+            travelTo(r, column, intervalMs);
+        }
+        bool leftToRight = ((r - comp.minRow) % 2 == 0);
+        int start = leftToRight ? comp.minCol : comp.maxCol;
+        int end = leftToRight ? comp.maxCol : comp.minCol;
+        int step = leftToRight ? 1 : -1;
+        for (int c = start; c != end + step && !haltFlag; c += step) {
+            while (pauseFlag) QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+            if (mask[r][c]) {
+                manControl2->sendCommand("A", intervalMs);
+            }
+            if (c != end) {
+                if (step == 1) manControl2->sendCommand("Dr", intervalMs);
+                else manControl2->sendCommand("Dl", intervalMs);
+                column = c + step;
+                ui->rowBox->setValue(r);
+                ui->columnBox->setValue(column);
+            }
+        }
+        if (r != comp.maxRow) {
+            manControl2->sendCommand("Dd", intervalMs);
+            row = r + 1;
+            ui->rowBox->setValue(row);
+            ui->columnBox->setValue(column);
+        }
+    }
+}
+
+void AutoSplatoon::executeTaskNearestNeighbor()
+{
+    QVector<QVector<bool>> localMask;
+    if (!mask.isEmpty()) localMask = mask;
+    else localMask = buildMask(image, ui->thresholdBox->value());
+    QVector<Component> comps = findComponents(localMask);
+    QVector<bool> done(comps.size(), false);
+    for (;;) {
+        int idx = -1;
+        int bestDist = INT_MAX;
+        for (int i = 0; i < comps.size(); i++) {
+            if (done[i]) continue;
+            const Component& comp = comps[i];
+            int dist = INT_MAX;
+            for (const QPoint& p : comp.points) {
+                int d = qAbs(p.y() - row) + qAbs(p.x() - column);
+                if (d < dist) dist = d;
+            }
+            if (dist < bestDist) {
+                bestDist = dist;
+                idx = i;
+            }
+        }
+        if (idx == -1) break;
+        drawComponent(comps[idx], localMask, interval);
+        done[idx] = true;
+        if (haltFlag) break;
+    }
+    on_haltButton_clicked();
 }
