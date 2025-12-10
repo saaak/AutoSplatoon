@@ -447,36 +447,73 @@ void AutoSplatoon::travelTo(int targetRow, int targetCol, int intervalMs)
 void AutoSplatoon::drawComponent(const Component& comp, const QVector<QVector<bool>>& mask, int intervalMs)
 {
     travelTo(comp.entry.y(), comp.entry.x(), intervalMs);
-    for (int r = comp.minRow; r <= comp.maxRow && !haltFlag; r++) {
-        if (column < comp.minCol) {
-            travelTo(r, comp.minCol, intervalMs);
-        } else if (column > comp.maxCol) {
-            travelTo(r, comp.maxCol, intervalMs);
-        } else {
-            travelTo(r, column, intervalMs);
-        }
-        bool leftToRight = ((r - comp.minRow) % 2 == 0);
-        int start = leftToRight ? comp.minCol : comp.maxCol;
-        int end = leftToRight ? comp.maxCol : comp.minCol;
-        int step = leftToRight ? 1 : -1;
-        for (int c = start; c != end + step && !haltFlag; c += step) {
-            while (pauseFlag) QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-            if (mask[r][c]) {
-                manControl2->sendCommand("A", intervalMs);
+    if (haltFlag) return;
+    if (mask[comp.entry.y()][comp.entry.x()]) {
+        manControl2->sendCommand("A", intervalMs);
+    }
+    QVector<QVector<bool>> visited(mask.size(), QVector<bool>(mask.isEmpty() ? 0 : mask[0].size(), false));
+    visited[comp.entry.y()][comp.entry.x()] = true;
+    QVector<QPoint> stack;
+    QPoint cur(comp.entry.x(), comp.entry.y());
+    auto inComp = [&](int rr, int cc){
+        return rr >= comp.minRow && rr <= comp.maxRow && cc >= comp.minCol && cc <= comp.maxCol;
+    };
+    for (;;) {
+        if (haltFlag) break;
+        while (pauseFlag) QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        const int dr[4] = {0, 0, -1, 1};
+        const int dc[4] = {1, -1, 0, 0};
+        bool moved = false;
+        for (int k = 0; k < 4; k++) {
+            int nr = cur.y() + dr[k];
+            int nc = cur.x() + dc[k];
+            if (!inComp(nr, nc)) continue;
+            if (!mask[nr][nc]) continue;
+            if (visited[nr][nc]) continue;
+            stack.push_back(cur);
+            if (dc[k] == 1) {
+                manControl2->sendCommand("Dr", intervalMs);
+                column += 1;
+            } else if (dc[k] == -1) {
+                manControl2->sendCommand("Dl", intervalMs);
+                column -= 1;
+            } else if (dr[k] == 1) {
+                manControl2->sendCommand("Dd", intervalMs);
+                row += 1;
+            } else if (dr[k] == -1) {
+                manControl2->sendCommand("Du", intervalMs);
+                row -= 1;
             }
-            if (c != end) {
-                if (step == 1) manControl2->sendCommand("Dr", intervalMs);
-                else manControl2->sendCommand("Dl", intervalMs);
-                column = c + step;
-                ui->rowBox->setValue(r);
-                ui->columnBox->setValue(column);
-            }
-        }
-        if (r != comp.maxRow) {
-            manControl2->sendCommand("Dd", intervalMs);
-            row = r + 1;
             ui->rowBox->setValue(row);
             ui->columnBox->setValue(column);
+            cur = QPoint(nc, nr);
+            visited[nr][nc] = true;
+            manControl2->sendCommand("A", intervalMs);
+            moved = true;
+            break;
+        }
+        if (!moved) {
+            if (stack.isEmpty()) break;
+            QPoint back = stack.back();
+            stack.pop_back();
+            int rr = back.y() - cur.y();
+            int cc = back.x() - cur.x();
+            if (cc == 1) {
+                manControl2->sendCommand("Dr", intervalMs);
+                column += 1;
+            } else if (cc == -1) {
+                manControl2->sendCommand("Dl", intervalMs);
+                column -= 1;
+            } else if (rr == 1) {
+                manControl2->sendCommand("Dd", intervalMs);
+                row += 1;
+            } else if (rr == -1) {
+                manControl2->sendCommand("Du", intervalMs);
+                row -= 1;
+            }
+            ui->rowBox->setValue(row);
+            ui->columnBox->setValue(column);
+            cur = back;
         }
     }
 }
@@ -505,9 +542,14 @@ void AutoSplatoon::executeTaskNearestNeighbor()
             }
         }
         if (idx == -1) break;
-        drawComponent(comps[idx], localMask, interval);
+        drawComponentDFS(comps[idx], localMask, interval);
         done[idx] = true;
         if (haltFlag) break;
     }
     on_haltButton_clicked();
+}
+
+void AutoSplatoon::drawComponentDFS(const Component& comp, const QVector<QVector<bool>>& mask, int intervalMs)
+{
+    drawComponent(comp, mask, intervalMs);
 }
